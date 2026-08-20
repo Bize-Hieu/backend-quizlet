@@ -1,6 +1,10 @@
 const supabase = require('../config/supabase');
+const { fsrs, Card, Rating } = require('fsrs.js');
 
-// 1. Import hàng loạt từ Quizlet (ĐÃ XÓA level_hien_tai để tương thích DB mới)
+// Khởi tạo lõi AI FSRS
+const f = fsrs();
+
+// 1. Import hàng loạt từ Quizlet (Giữ nguyên, vì DB đã tự gán Default cho 8 cột FSRS)
 exports.importFromQuizlet = async (req, res) => {
     try {
         const { id_hocphan, raw_text } = req.body;
@@ -31,7 +35,6 @@ exports.importFromQuizlet = async (req, res) => {
                     vie = posMatch[2]; 
                 }
 
-                // Không cần nhét interval, ease_factor vào đây vì DB đã tự gán Default là 0, 2.5 và 0 rồi
                 insertData.push({
                     tu_tieng_anh: eng,
                     nghia_tieng_viet: vie,
@@ -54,7 +57,7 @@ exports.importFromQuizlet = async (req, res) => {
     }
 };
 
-// 2. Lấy các từ tới hạn ôn (Cho phép học trước đến 23:59:59 hôm nay)
+// 2. Lấy các từ tới hạn ôn
 exports.getWordsToReview = async (req, res) => {
     try {
         const { id_hocphan } = req.params;
@@ -80,11 +83,12 @@ exports.getWordsToReview = async (req, res) => {
     }
 };
 
-// 3. THUẬT TOÁN SM-2 CHUẨN QUỐC TẾ
+// 3. THUẬT TOÁN FSRS CHUẨN QUỐC TẾ
 exports.reviewCard = async (req, res) => {
     try {
         const { id_tuvung, is_remembered } = req.body;
         
+        // Kéo data thẻ hiện tại từ Supabase
         const { data: currentWord, error: fetchErr } = await supabase
             .from('tuvung')
             .select('*')
@@ -93,51 +97,48 @@ exports.reviewCard = async (req, res) => {
 
         if (fetchErr || !currentWord) return res.status(404).json({ error: 'Không tìm thấy từ vựng' });
 
-        // Lấy các chỉ số SM-2 từ DB lên
-        let { interval, ease_factor, so_lan_lap } = currentWord;
-        let nextTimeVN = new Date(new Date().getTime() + (7 * 60 * 60 * 1000)); 
+        // Tái tạo lại Object Card theo form của thư viện FSRS
+        const card = new Card();
+        card.state = currentWord.state;
+        card.stability = currentWord.stability;
+        card.difficulty = currentWord.difficulty;
+        card.reps = currentWord.reps;
+        card.lapses = currentWord.lapses;
+        card.elapsed_days = currentWord.elapsed_days;
+        card.scheduled_days = currentWord.scheduled_days;
+        card.due = currentWord.thoi_gian_on_tiep ? new Date(currentWord.thoi_gian_on_tiep) : new Date();
+        card.last_review = currentWord.last_review ? new Date(currentWord.last_review) : undefined;
 
-        if (is_remembered) {
-            // NẾU NHỚ: Tăng khoảng cách theo cấp số nhân
-            if (so_lan_lap === 0) {
-                interval = 1; // Đúng lần đầu -> Mai học lại
-            } else if (so_lan_lap === 1) {
-                interval = 3; // Đúng lần 2 -> Giãn ra 3 ngày
-            } else {
-                // Từ lần 3 trở đi: Lấy khoảng cách cũ nhân với Hệ số độ khó (EF)
-                interval = Math.round(interval * ease_factor);
-            }
-            so_lan_lap += 1; // Cộng dồn số lần đúng liên tiếp
-            
-            // ÉP THỜI GIAN VỀ ĐÚNG 00:00:00 của ngày tương lai
-            nextTimeVN.setDate(nextTimeVN.getDate() + interval);
-            nextTimeVN.setUTCHours(0, 0, 0, 0); 
-        } else {
-            // NẾU QUÊN: Phạt hệ số, nhưng không vứt bỏ hoàn toàn
-            ease_factor = Math.max(1.3, ease_factor - 0.2); // Chém EF nhưng giữ mức tối thiểu là 1.3
-            interval = 0.5; // Ép về nửa ngày (12 tiếng) để vá nơ-ron ngay
-            so_lan_lap = 0; // Reset chuỗi trả lời đúng
-            
-            // Cộng 12 tiếng kể từ thời điểm bấm Quên
-            nextTimeVN.setUTCHours(nextTimeVN.getUTCHours() + 12);
-        }
+        // Quy đổi nút bấm Frontend sang Điểm số FSRS (1: Quên, 3: Nhớ)
+        const rating = is_remembered ? Rating.Good : Rating.Again;
 
-        // Chuyển lại về giờ UTC để ném vào Database
-        const nextTimeUTC = new Date(nextTimeVN.getTime() - (7 * 60 * 60 * 1000));
+        // Ép AI FSRS tính toán toàn bộ tương lai của thẻ này
+        const now = new Date();
+        const schedulingCards = f.repeat(card, now);
+        
+        // Trích xuất kết quả tương ứng với nút ông vừa bấm
+        const recordLog = schedulingCards[rating];
+        const updatedCard = recordLog.card;
 
+        // Quăng ngược toàn bộ thông số AI vừa tính toán về lại Database
         const { data, error } = await supabase
             .from('tuvung')
             .update({
-                interval: interval,
-                ease_factor: ease_factor,
-                so_lan_lap: so_lan_lap,
-                thoi_gian_on_tiep: nextTimeUTC.toISOString()
+                state: updatedCard.state,
+                stability: updatedCard.stability,
+                difficulty: updatedCard.difficulty,
+                reps: updatedCard.reps,
+                lapses: updatedCard.lapses,
+                elapsed_days: updatedCard.elapsed_days,
+                scheduled_days: updatedCard.scheduled_days,
+                thoi_gian_on_tiep: updatedCard.due.toISOString(), // Giờ hoàng đạo tới lượt ôn
+                last_review: updatedCard.last_review ? updatedCard.last_review.toISOString() : now.toISOString()
             })
             .eq('id', id_tuvung)
             .select();
 
         if (error) throw error;
-        res.json({ message: 'Đã cập nhật tiến độ SM-2', data: data[0] });
+        res.json({ message: 'Đã tối ưu não bộ bằng FSRS', data: data[0] });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
