@@ -21,19 +21,34 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// TỰ CODE CHAY BOT BẰNG FETCH NATIVE (KHÔNG XÀI THƯ VIỆN CŨ)
+// TỰ CODE CHAY BOT BẰNG FETCH NATIVE 
 // ==========================================
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
+const frontendUrl = "https://bize-hieu.github.io/FRONTEND-QUIZLET/"; // Link web để bấm phát học luôn
 
-// Hàm lõi tự bắn API Telegram
-async function sendTelegramMessage(text) {
+// Hàm lõi tự bắn API Telegram (Hỗ trợ nút bấm Inline Keyboard)
+async function sendTelegramMessage(text, showButton = false) {
     try {
+        const payload = {
+            chat_id: chatId,
+            text: text,
+            parse_mode: 'Markdown'
+        };
+
+        // Nếu có thẻ cần học, nhúng nút bấm mở web
+        if (showButton) {
+            payload.reply_markup = {
+                inline_keyboard: [[{ text: "🚀 Mở App Học Ngay", url: frontendUrl }]]
+            };
+        }
+
         const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text: text, parse_mode: 'Markdown' })
+            body: JSON.stringify(payload)
         });
+        
         const data = await response.json();
         if (!data.ok) {
             console.error("Lỗi từ Telegram API:", data);
@@ -45,31 +60,53 @@ async function sendTelegramMessage(text) {
     }
 }
 
-// 1. Lập lịch tự động (Báo thức 8h sáng & 8h tối)
-cron.schedule('0 8,20 * * *', async () => {
+// 1. Lập lịch tự động (8h, 12h, 16h, 20h - Chuẩn nhịp độ FSRS)
+cron.schedule('0 8,12,16,20 * * *', async () => {
     try {
         const now = new Date().toISOString();
-        const { count } = await supabase.from('tuvung').select('*', { count: 'exact', head: true }).lte('thoi_gian_on_tiep', now);
+        
+        // Quét tổng số thẻ tới hạn
+        const { count } = await supabase
+            .from('tuvung')
+            .select('*', { count: 'exact', head: true })
+            .lte('thoi_gian_on_tiep', now);
         
         if (count > 0) {
-            sendTelegramMessage(`⏰ Báo thức tự động: Tới giờ ôn tập rồi Hiếu ơi! Có *${count} từ* đang chờ.`);
+            sendTelegramMessage(`⏰ **Báo thức FSRS:** Tới khung giờ ôn tập rồi!\n\nĐang có *${count} thẻ* rớt đài sắp quên. Cày lẹ đi!`, true);
         }
     } catch (err) {
         console.log("Lỗi cron job:", err.message);
     }
 });
 
-// 2. Thay vì gõ /check trong Telegram (đòi hỏi code lắng nghe phức tạp), mình làm một cái API để test
+// 2. API Test Bot (Nâng cấp)
 app.get('/api/test-bot', async (req, res) => {
     try {
         const now = new Date().toISOString();
-        const { count } = await supabase.from('tuvung').select('*', { count: 'exact', head: true }).lte('thoi_gian_on_tiep', now);
         
-        if (count > 0) {
-            sendTelegramMessage(`🔥 Test bot: Đang có *${count} từ* tới hạn.\n\nLên trình tiếng Anh Level 3 lẹ lẹ còn chuẩn bị mượt mà cho dự án UniMate AI nữa! 🚀`);
+        // Đếm thẻ cần ôn (Đã tới hạn)
+        const { count: dueCount } = await supabase
+            .from('tuvung')
+            .select('*', { count: 'exact', head: true })
+            .lte('thoi_gian_on_tiep', now);
+            
+        // Đếm thẻ mới tinh chưa đụng tới (state = 0)
+        const { count: newCount } = await supabase
+            .from('tuvung')
+            .select('*', { count: 'exact', head: true })
+            .eq('state', 0);
+        
+        if (dueCount > 0) {
+            let msg = `🔥 **Cập nhật Hệ Thống:**\n\n`;
+            msg += `🔴 Tới hạn cần ôn ngay: *${dueCount} thẻ*\n`;
+            msg += `🔵 Thẻ mới chờ khám phá: *${newCount || 0} thẻ*\n\n`;
+            msg += `Lên trình tiếng Anh Level 3 lẹ lẹ còn chuẩn bị mượt mà cho dự án UniMate AI nữa! 🚀`;
+            
+            sendTelegramMessage(msg, true);
         } else {
-            sendTelegramMessage(`✅ Ông đã học sạch sẽ từ vựng! Cứ thoải mái cắm auto đi farm bạc Albion tiếp đi! ⚔️`);
+            sendTelegramMessage(`✅ Sạch sẽ không còn từ nào nợ! Cứ thoải mái cắm auto hoặc vác Rìu Chiến đi solo farm bạc tiếp đi! ⚔️`);
         }
+        
         res.json({ message: "Đã bắn lệnh qua Telegram, check điện thoại ngay!" });
     } catch (err) {
         res.status(500).json({ error: err.message });
