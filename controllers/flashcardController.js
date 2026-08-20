@@ -1,8 +1,8 @@
 const supabase = require('../config/supabase');
-const { fsrs, Card, Rating } = require('fsrs.js');
+const { FSRS, Card, Rating } = require('fsrs.js');
 
-// Khởi tạo lõi AI FSRS
-const f = fsrs();
+// Khởi tạo lõi AI FSRS đúng chuẩn Class
+const f = new FSRS();
 
 // 1. Import hàng loạt từ Quizlet (Giữ nguyên, vì DB đã tự gán Default cho 8 cột FSRS)
 exports.importFromQuizlet = async (req, res) => {
