@@ -98,7 +98,7 @@ async function scanAndNotifyFSRS() {
                 msg += `✨ *Từ mới chưa đụng:* ${newCount} thẻ\n`;
             }
 
-            msg += `\nLên trình Level 3 lẹ lẹ còn chuẩn bị mượt mà cho dự án UniMate AI nữa! 🚀\nTổng cộng cần xử lý: *${totalDue} thẻ*.`;
+            msg += `\nLên trình lẹ lẹ còn chuẩn bị cho dự án nữa! 🚀\nTổng cộng cần xử lý: *${totalDue} thẻ*.`;
 
             sendTelegramMessage(msg, true);
         } else {

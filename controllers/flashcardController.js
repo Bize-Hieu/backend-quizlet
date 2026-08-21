@@ -142,4 +142,27 @@ exports.reviewCard = async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+// 4. LẤY TẤT CẢ TỪ VỰNG CẦN ÔN (GOM NHÓM THEO HỌC PHẦN)
+exports.getAllWordsToReview = async (req, res) => {
+    try {
+        const nowUTC = new Date();
+        const nowVN = new Date(nowUTC.getTime() + (7 * 60 * 60 * 1000));
+        const endOfTodayVN = new Date(nowVN);
+        endOfTodayVN.setUTCHours(23, 59, 59, 999); 
+        const endOfTodayUTC = new Date(endOfTodayVN.getTime() - (7 * 60 * 60 * 1000));
+
+        // Join bảng tuvung với hocphan để lấy cái tên, sau đó sắp xếp theo ID học phần
+        const { data, error } = await supabase
+            .from('tuvung')
+            .select('*, hocphan(ten_hocphan)')
+            .lte('thoi_gian_on_tiep', endOfTodayUTC.toISOString())
+            .order('id_hocphan', { ascending: true }) // Cái này để gom cụm
+            .order('thoi_gian_on_tiep', { ascending: true }); 
+
+        if (error) throw error;
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+}
 };
