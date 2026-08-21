@@ -138,7 +138,7 @@ exports.reviewCard = async (req, res) => {
     }
 }; // <-- Hàm số 3 kết thúc đúng ở đây
 
-// 4. LẤY TẤT CẢ TỪ VỰNG CẦN ÔN (GOM NHÓM THEO HỌC PHẦN)
+// 4. LẤY TẤT CẢ TỪ VỰNG CẦN ÔN (GOM NHÓM THEO HỌC PHẦN & BỎ TỪ MỚI)
 exports.getAllWordsToReview = async (req, res) => {
     try {
         const nowUTC = new Date();
@@ -151,6 +151,7 @@ exports.getAllWordsToReview = async (req, res) => {
             .from('tuvung')
             .select('*, hocphan(ten_hocphan)')
             .lte('thoi_gian_on_tiep', endOfTodayUTC.toISOString())
+            .neq('state', 0) // CHỐT CHẶN: Chỉ lấy thẻ đã học (State khác 0)
             .order('id_hocphan', { ascending: true }) 
             .order('thoi_gian_on_tiep', { ascending: true }); 
 
@@ -159,4 +160,4 @@ exports.getAllWordsToReview = async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-}; // <-- Hàm số 4 kết thúc đúng ở đây
+};
