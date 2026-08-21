@@ -4,7 +4,7 @@ const { FSRS, Card, Rating } = require('fsrs.js');
 // Khởi tạo lõi AI FSRS đúng chuẩn Class
 const f = new FSRS();
 
-// 1. Import hàng loạt từ Quizlet (Giữ nguyên, vì DB đã tự gán Default cho 8 cột FSRS)
+// 1. Import hàng loạt từ Quizlet
 exports.importFromQuizlet = async (req, res) => {
     try {
         const { id_hocphan, raw_text } = req.body;
@@ -88,7 +88,6 @@ exports.reviewCard = async (req, res) => {
     try {
         const { id_tuvung, is_remembered } = req.body;
         
-        // Kéo data thẻ hiện tại từ Supabase
         const { data: currentWord, error: fetchErr } = await supabase
             .from('tuvung')
             .select('*')
@@ -97,7 +96,6 @@ exports.reviewCard = async (req, res) => {
 
         if (fetchErr || !currentWord) return res.status(404).json({ error: 'Không tìm thấy từ vựng' });
 
-        // Tái tạo lại Object Card theo form của thư viện FSRS
         const card = new Card();
         card.state = currentWord.state;
         card.stability = currentWord.stability;
@@ -109,18 +107,14 @@ exports.reviewCard = async (req, res) => {
         card.due = currentWord.thoi_gian_on_tiep ? new Date(currentWord.thoi_gian_on_tiep) : new Date();
         card.last_review = currentWord.last_review ? new Date(currentWord.last_review) : undefined;
 
-        // Quy đổi nút bấm Frontend sang Điểm số FSRS (1: Quên, 3: Nhớ)
         const rating = is_remembered ? Rating.Good : Rating.Again;
 
-        // Ép AI FSRS tính toán toàn bộ tương lai của thẻ này
         const now = new Date();
         const schedulingCards = f.repeat(card, now);
         
-        // Trích xuất kết quả tương ứng với nút ông vừa bấm
         const recordLog = schedulingCards[rating];
         const updatedCard = recordLog.card;
 
-        // Quăng ngược toàn bộ thông số AI vừa tính toán về lại Database
         const { data, error } = await supabase
             .from('tuvung')
             .update({
@@ -131,7 +125,7 @@ exports.reviewCard = async (req, res) => {
                 lapses: updatedCard.lapses,
                 elapsed_days: updatedCard.elapsed_days,
                 scheduled_days: updatedCard.scheduled_days,
-                thoi_gian_on_tiep: updatedCard.due.toISOString(), // Giờ hoàng đạo tới lượt ôn
+                thoi_gian_on_tiep: updatedCard.due.toISOString(),
                 last_review: updatedCard.last_review ? updatedCard.last_review.toISOString() : now.toISOString()
             })
             .eq('id', id_tuvung)
@@ -142,6 +136,8 @@ exports.reviewCard = async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+}; // <-- Hàm số 3 kết thúc đúng ở đây
+
 // 4. LẤY TẤT CẢ TỪ VỰNG CẦN ÔN (GOM NHÓM THEO HỌC PHẦN)
 exports.getAllWordsToReview = async (req, res) => {
     try {
@@ -151,12 +147,11 @@ exports.getAllWordsToReview = async (req, res) => {
         endOfTodayVN.setUTCHours(23, 59, 59, 999); 
         const endOfTodayUTC = new Date(endOfTodayVN.getTime() - (7 * 60 * 60 * 1000));
 
-        // Join bảng tuvung với hocphan để lấy cái tên, sau đó sắp xếp theo ID học phần
         const { data, error } = await supabase
             .from('tuvung')
             .select('*, hocphan(ten_hocphan)')
             .lte('thoi_gian_on_tiep', endOfTodayUTC.toISOString())
-            .order('id_hocphan', { ascending: true }) // Cái này để gom cụm
+            .order('id_hocphan', { ascending: true }) 
             .order('thoi_gian_on_tiep', { ascending: true }); 
 
         if (error) throw error;
@@ -164,5 +159,4 @@ exports.getAllWordsToReview = async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-}
-};
+}; // <-- Hàm số 4 kết thúc đúng ở đây
