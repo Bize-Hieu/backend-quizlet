@@ -109,8 +109,8 @@ async function scanAndNotifyFSRS() {
     }
 }
 
-// 1. Lập lịch tự động (8h, 12h, 16h, 20h)
-cron.schedule('0 8,12,16,20 * * *', () => {
+// 1. Lập lịch tự động (8h, 12h, 16h, 20h) giờ VN , 0 1 5 9 13 là giờ của Mẽo
+cron.schedule('0 1,5,9,13 * * *', () => {
     scanAndNotifyFSRS();
 });
 
