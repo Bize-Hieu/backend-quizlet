@@ -136,7 +136,7 @@ exports.reviewCard = async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-}; // <-- Hàm số 3 kết thúc đúng ở đây
+};
 
 // 4. LẤY TẤT CẢ TỪ VỰNG CẦN ÔN (GOM NHÓM THEO HỌC PHẦN & BỎ TỪ MỚI)
 exports.getAllWordsToReview = async (req, res) => {
@@ -159,5 +159,79 @@ exports.getAllWordsToReview = async (req, res) => {
         res.json(data);
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+};
+
+// =========================================================================
+// 5. IMPORT BẰNG AI (TỰ ĐỘNG SINH ĐỊNH NGHĨA ANH-ANH VÀ LƯU DATABASE)
+// =========================================================================
+exports.importWithAI = async (req, res) => {
+    // raw_text vì code cũ của ông đang bắt biến này từ Frontend
+    const { raw_text, id_hocphan } = req.body; 
+
+    if (!raw_text || !id_hocphan) {
+        return res.status(400).json({ error: 'Thiếu dữ liệu văn bản hoặc chưa chọn học phần!' });
+    }
+
+    try {
+        // 1. Ép AI làm việc
+        const prompt = `
+        Tao có một danh sách từ vựng copy từ Quizlet (định dạng: Từ tiếng Anh [Tab] Nghĩa tiếng Việt).
+        Nhiệm vụ của mày: Giữ nguyên Từ gốc. Viết thêm 1 câu định nghĩa Tiếng Anh thật ngắn gọn, dễ hiểu, bình dân.
+        
+        Trả về kết quả ĐÚNG ĐỊNH DẠNG NÀY (Không nói dài dòng, không thêm markdown code block, phải có dấu | ):
+        Từ vựng | Định nghĩa Tiếng Anh | Nghĩa Tiếng Việt
+        
+        Danh sách gốc:
+        ${raw_text}
+        `;
+
+        // req.aiModel lấy từ trạm trung chuyển server.js
+        const result = await req.aiModel.generateContent(prompt);
+        const responseText = result.response.text();
+        
+        // 2. Chẻ dữ liệu lấy thành phẩm
+        const lines = responseText.split('\n').filter(line => line.trim() !== '');
+        const cardsToInsert = [];
+
+        for (const line of lines) {
+            const parts = line.split('|').map(item => item.trim());
+            // Chỉ lấy những dòng AI chẻ chuẩn 3 mảnh
+            if (parts.length >= 3) {
+                cardsToInsert.push({
+                    id_hocphan: Number(id_hocphan), 
+                    tu_tieng_anh: parts[0],
+                    // Ép chung 1 cột bằng dấu | để Frontend xài hàm split('|')
+                    nghia_tieng_viet: `${parts[1]} | ${parts[2]}`, 
+                    
+                    // Reset thông số FSRS chuẩn chỉ cho thẻ mới
+                    state: 0, 
+                    stability: 0,
+                    difficulty: 0,
+                    elapsed_days: 0,
+                    scheduled_days: 0,
+                    reps: 0,
+                    lapses: 0,
+                    thoi_gian_on_tiep: new Date().toISOString()
+                });
+            }
+        }
+
+        if (cardsToInsert.length === 0) {
+            return res.status(400).json({ error: 'AI không xử lý được hoặc dữ liệu đầu vào bị sai cấu trúc.' });
+        }
+
+        // 3. Đẩy lên Supabase
+        const { data, error } = await supabase.from('tuvung').insert(cardsToInsert).select();
+        if (error) throw error;
+
+        res.status(201).json({ 
+            message: `Ghê chưa, AI đã độ và nhập thành công ${data.length} từ!`, 
+            data 
+        });
+
+    } catch (err) {
+        console.error('Lỗi API Import AI:', err);
+        res.status(500).json({ error: 'Lỗi hệ thống hoặc AI đang ngáo: ' + err.message });
     }
 };

@@ -4,6 +4,9 @@ const cors = require('cors');
 const cron = require('node-cron');
 const supabase = require('./config/supabase'); 
 
+// 1. THÊM THƯ VIỆN GEMINI VÀO ĐÂY
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
 const deckRoutes = require('./routes/deckRoutes');
 const flashcardRoutes = require('./routes/flashcardRoutes');
 
@@ -12,6 +15,20 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// ==========================================
+// 2. KHỞI TẠO BỘ NÃO AI (GEMINI 2.5 FLASH)
+// ==========================================
+// Nhớ phải có dòng GEMINI_API_KEY=AIzaSy... trong file .env nhé, cấm để lộ thiên
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+// 3. MIDDLEWARE: Bơm AI vào mọi Request để file Route khác xài ké
+app.use((req, res, next) => {
+    req.aiModel = model;
+    next();
+});
+// ==========================================
 
 app.use('/api/decks', deckRoutes);
 app.use('/api/cards', flashcardRoutes);
