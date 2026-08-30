@@ -170,17 +170,18 @@ exports.importWithAI = async (req, res) => {
 
     try {
         // ÉP AI XUẤT JSON CHUẨN CHỈ, VẮT KIỆT WORD FAMILY
-        const prompt = `
-        Mày là một giáo viên tiếng Anh xuất sắc. Tao có danh sách từ vựng gốc (Từ tiếng Anh [Tab] Nghĩa tiếng Việt).
-        Nhiệm vụ: Trả về một mảng JSON thuần túy (không bọc trong markdown \`\`\`json). 
-        Mỗi object trong mảng phải có đúng các key sau:
-        - "tu_tieng_anh": Từ gốc.
-        - "nghia_tieng_viet": Nghĩa tiếng Việt ngắn gọn.
-        - "dinh_nghia_anh": 1 câu định nghĩa bằng Tiếng Anh (ngắn gọn, dễ hiểu).
-        - "cau_mau": 1 câu ví dụ tiếng Anh thực tế có chứa từ đó + Dịch nghĩa sang tiếng Việt.
-        - "word_form": Liệt kê toàn bộ họ hàng từ vựng (Word Family) của từ này một cách triệt để. Bắt buộc theo định dạng: V: [từ] - N: [từ] - Adj: [từ] - Adv: [từ]. Phải quét sạch các dạng phổ biến. Nếu từ gốc không có dạng nào thì bỏ qua.
+const prompt = `
+        Tao cung cấp một danh sách từ vựng. Dữ liệu đầu vào có thể XẢY RA 2 TRƯỜNG HỢP: chỉ có Tiếng Anh, hoặc có cả Tiếng Anh lẫn Tiếng Việt (cách nhau bởi khoảng trắng hoặc Tab).
+        Nhiệm vụ: Phân tích đầu vào và trả về một mảng JSON thuần túy (không bọc markdown code block).
         
-        Danh sách gốc:
+        Mỗi object trong mảng phải có đúng các key sau:
+        - "tu_tieng_anh": Từ gốc Tiếng Anh.
+        - "nghia_tieng_viet": Nếu đầu vào ĐÃ CÓ nghĩa Tiếng Việt thì bám theo nghĩa đó (có thể gọt giũa lại cho gọn). Nếu đầu vào CHỈ CÓ Tiếng Anh thì mày TỰ DỊCH nghĩa chuẩn xác nhất.
+        - "dinh_nghia_anh": 1 câu định nghĩa Anh-Anh dễ hiểu, chuẩn từ điển.
+        - "cau_mau": 1 câu ví dụ tiếng Anh thực tế + Dịch nghĩa sang tiếng Việt.
+        - "word_form": Liệt kê toàn bộ Word Family. Định dạng: V: [từ] - N: [từ] - Adj: [từ] - Adv: [từ]. Quét sạch các dạng, không có thì bỏ qua.
+        
+        Danh sách đầu vào:
         ${raw_text}
         `;
 
