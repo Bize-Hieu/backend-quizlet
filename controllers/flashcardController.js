@@ -4,7 +4,7 @@ const { FSRS, Card, Rating } = require('fsrs.js');
 // Khởi tạo lõi AI FSRS đúng chuẩn Class
 const f = new FSRS();
 
-// 1. Import hàng loạt từ Quizlet
+// 1. Import hàng loạt từ Quizlet (Cũ - giữ nguyên)
 exports.importFromQuizlet = async (req, res) => {
     try {
         const { id_hocphan, raw_text } = req.body;
@@ -45,7 +45,7 @@ exports.importFromQuizlet = async (req, res) => {
         }
 
         if (insertData.length === 0) {
-            return res.status(400).json({ error: 'Không tìm thấy từ vựng hợp lệ nào. Cấu trúc copy bị sai.' });
+            return res.status(400).json({ error: 'Không tìm thấy từ vựng hợp lệ nào.' });
         }
 
         const { data, error } = await supabase.from('tuvung').insert(insertData).select();
@@ -57,16 +57,14 @@ exports.importFromQuizlet = async (req, res) => {
     }
 };
 
-// 2. Lấy các từ tới hạn ôn
+// 2. Lấy các từ tới hạn ôn (Cũ - giữ nguyên)
 exports.getWordsToReview = async (req, res) => {
     try {
         const { id_hocphan } = req.params;
-        
         const nowUTC = new Date();
         const nowVN = new Date(nowUTC.getTime() + (7 * 60 * 60 * 1000));
         const endOfTodayVN = new Date(nowVN);
         endOfTodayVN.setUTCHours(23, 59, 59, 999); 
-        
         const endOfTodayUTC = new Date(endOfTodayVN.getTime() - (7 * 60 * 60 * 1000));
 
         const { data, error } = await supabase
@@ -83,7 +81,7 @@ exports.getWordsToReview = async (req, res) => {
     }
 };
 
-// 3. THUẬT TOÁN FSRS CHUẨN QUỐC TẾ
+// 3. THUẬT TOÁN FSRS CHUẨN QUỐC TẾ (Cũ - giữ nguyên)
 exports.reviewCard = async (req, res) => {
     try {
         const { id_tuvung, is_remembered } = req.body;
@@ -108,10 +106,8 @@ exports.reviewCard = async (req, res) => {
         card.last_review = currentWord.last_review ? new Date(currentWord.last_review) : undefined;
 
         const rating = is_remembered ? Rating.Good : Rating.Again;
-
         const now = new Date();
         const schedulingCards = f.repeat(card, now);
-        
         const recordLog = schedulingCards[rating];
         const updatedCard = recordLog.card;
 
@@ -132,13 +128,13 @@ exports.reviewCard = async (req, res) => {
             .select();
 
         if (error) throw error;
-        res.json({ message: 'Đã tối ưu não bộ bằng FSRS', data: data[0] });
+        res.json({ message: 'Đã tối ưu não bộ', data: data[0] });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
 
-// 4. LẤY TẤT CẢ TỪ VỰNG CẦN ÔN (GOM NHÓM THEO HỌC PHẦN & BỎ TỪ MỚI)
+// 4. LẤY TẤT CẢ TỪ VỰNG CẦN ÔN (Cũ - giữ nguyên)
 exports.getAllWordsToReview = async (req, res) => {
     try {
         const nowUTC = new Date();
@@ -151,7 +147,7 @@ exports.getAllWordsToReview = async (req, res) => {
             .from('tuvung')
             .select('*, hocphan(ten_hocphan)')
             .lte('thoi_gian_on_tiep', endOfTodayUTC.toISOString())
-            .neq('state', 0) // CHỐT CHẶN: Chỉ lấy thẻ đã học (State khác 0)
+            .neq('state', 0)
             .order('id_hocphan', { ascending: true }) 
             .order('thoi_gian_on_tiep', { ascending: true }); 
 
@@ -163,10 +159,9 @@ exports.getAllWordsToReview = async (req, res) => {
 };
 
 // =========================================================================
-// 5. IMPORT BẰNG AI (TỰ ĐỘNG SINH ĐỊNH NGHĨA ANH-ANH VÀ LƯU DATABASE)
+// 5. IMPORT BẰNG AI (UPDATE MỚI: DÙNG JSON, LẤY CÂU MẪU + WORD FORM)
 // =========================================================================
 exports.importWithAI = async (req, res) => {
-    // raw_text vì code cũ của ông đang bắt biến này từ Frontend
     const { raw_text, id_hocphan } = req.body; 
 
     if (!raw_text || !id_hocphan) {
@@ -174,64 +169,67 @@ exports.importWithAI = async (req, res) => {
     }
 
     try {
-        // 1. Ép AI làm việc
+        // ÉP AI XUẤT JSON CHUẨN CHỈ, VẮT KIỆT WORD FAMILY
         const prompt = `
-        Tao có một danh sách từ vựng copy từ Quizlet (định dạng: Từ tiếng Anh [Tab] Nghĩa tiếng Việt).
-        Nhiệm vụ của mày: Giữ nguyên Từ gốc. Viết thêm 1 câu định nghĩa Tiếng Anh thật ngắn gọn, dễ hiểu, bình dân.
-        
-        Trả về kết quả ĐÚNG ĐỊNH DẠNG NÀY (Không nói dài dòng, không thêm markdown code block, phải có dấu | ):
-        Từ vựng | Định nghĩa Tiếng Anh | Nghĩa Tiếng Việt
+        Mày là một giáo viên tiếng Anh xuất sắc. Tao có danh sách từ vựng gốc (Từ tiếng Anh [Tab] Nghĩa tiếng Việt).
+        Nhiệm vụ: Trả về một mảng JSON thuần túy (không bọc trong markdown \`\`\`json). 
+        Mỗi object trong mảng phải có đúng các key sau:
+        - "tu_tieng_anh": Từ gốc.
+        - "nghia_tieng_viet": Nghĩa tiếng Việt ngắn gọn.
+        - "dinh_nghia_anh": 1 câu định nghĩa bằng Tiếng Anh (ngắn gọn, dễ hiểu).
+        - "cau_mau": 1 câu ví dụ tiếng Anh thực tế có chứa từ đó + Dịch nghĩa sang tiếng Việt.
+        - "word_form": Liệt kê toàn bộ họ hàng từ vựng (Word Family) của từ này một cách triệt để. Bắt buộc theo định dạng: V: [từ] - N: [từ] - Adj: [từ] - Adv: [từ]. Phải quét sạch các dạng phổ biến. Nếu từ gốc không có dạng nào thì bỏ qua.
         
         Danh sách gốc:
         ${raw_text}
         `;
 
-        // req.aiModel lấy từ trạm trung chuyển server.js
         const result = await req.aiModel.generateContent(prompt);
-        const responseText = result.response.text();
+        let responseText = result.response.text();
         
-        // 2. Chẻ dữ liệu lấy thành phẩm
-        const lines = responseText.split('\n').filter(line => line.trim() !== '');
+        // Dọn rác markdown nếu con AI nó lanh chanh thêm vào
+        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        const aiData = JSON.parse(responseText); 
         const cardsToInsert = [];
 
-        for (const line of lines) {
-            const parts = line.split('|').map(item => item.trim());
-            // Chỉ lấy những dòng AI chẻ chuẩn 3 mảnh
-            if (parts.length >= 3) {
-                cardsToInsert.push({
-                    id_hocphan: Number(id_hocphan), 
-                    tu_tieng_anh: parts[0],
-                    // Ép chung 1 cột bằng dấu | để Frontend xài hàm split('|')
-                    nghia_tieng_viet: `${parts[1]} | ${parts[2]}`, 
-                    
-                    // Reset thông số FSRS chuẩn chỉ cho thẻ mới
-                    state: 0, 
-                    stability: 0,
-                    difficulty: 0,
-                    elapsed_days: 0,
-                    scheduled_days: 0,
-                    reps: 0,
-                    lapses: 0,
-                    thoi_gian_on_tiep: new Date().toISOString()
-                });
-            }
+        for (const item of aiData) {
+            cardsToInsert.push({
+                id_hocphan: Number(id_hocphan), 
+                tu_tieng_anh: item.tu_tieng_anh,
+                // Gom Định nghĩa Anh và Nghĩa Việt chung 1 cột bằng dấu | để HTML cũ vẫn chạy tốt
+                nghia_tieng_viet: `${item.dinh_nghia_anh} | ${item.nghia_tieng_viet}`, 
+                
+                // NHÉT THÊM 2 CỘT MỚI VÀO ĐÂY!
+                cau_mau: item.cau_mau,
+                word_form: item.word_form,
+                
+                state: 0, 
+                stability: 0,
+                difficulty: 0,
+                elapsed_days: 0,
+                scheduled_days: 0,
+                reps: 0,
+                lapses: 0,
+                thoi_gian_on_tiep: new Date().toISOString()
+            });
         }
 
         if (cardsToInsert.length === 0) {
-            return res.status(400).json({ error: 'AI không xử lý được hoặc dữ liệu đầu vào bị sai cấu trúc.' });
+            return res.status(400).json({ error: 'AI không xử lý được hoặc dữ liệu sai cấu trúc.' });
         }
 
-        // 3. Đẩy lên Supabase
+        // Đẩy lên Supabase (nhớ là phải tạo 2 cột cau_mau và word_form bên Supabase rồi nhé)
         const { data, error } = await supabase.from('tuvung').insert(cardsToInsert).select();
         if (error) throw error;
 
         res.status(201).json({ 
-            message: `Ghê chưa, AI đã độ và nhập thành công ${data.length} từ!`, 
+            message: `Ghê chưa, AI đã độ full giáp và nhập thành công ${data.length} từ!`, 
             data 
         });
 
     } catch (err) {
         console.error('Lỗi API Import AI:', err);
-        res.status(500).json({ error: 'Lỗi hệ thống hoặc AI đang ngáo: ' + err.message });
+        res.status(500).json({ error: 'Lỗi hệ thống hoặc AI đang ngáo (Hoặc chưa tạo 2 cột bên DB): ' + err.message });
     }
 };
